@@ -1,0 +1,9 @@
+# Rust needs a larger main task stack than C (default is 3K)
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
+
+# 1000 Hz tick rate for 1ms thread sleep granularity (default 100 Hz = 10ms)
+CONFIG_FREERTOS_HZ=1000
+
+# Workaround for https://github.com/espressif/esp-idf/issues/7631
+#CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=n
+#CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=n

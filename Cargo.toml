@@ -1,0 +1,37 @@
+[package]
+name = "plastiwatch"
+version = "0.1.0"
+authors = ["Asongnabrilan-nso <abrilannso@gmail.com>"]
+edition = "2021"
+resolver = "2"
+rust-version = "1.77"
+
+[[bin]]
+name = "plastiwatch"
+harness = false # do not use the built-in cargo test harness -> resolve rust-analyzer errors
+
+[profile.release]
+opt-level = "s"
+
+[profile.dev]
+debug = true    # Symbols are nice, and they don't increase the size on Flash
+opt-level = "z"
+
+[features]
+default = []
+
+experimental = ["esp-idf-svc/experimental"]
+edge-impulse = []
+
+[dependencies]
+esp-idf-sys = { version = "0.36", features = ["binstart"] }
+esp-idf-hal = "0.45"
+esp-idf-svc = "0.51"
+log = "0.4"
+anyhow = "1.0"
+embedded-graphics = "0.8"
+
+[build-dependencies]
+embuild = "0.33"
+cc = "1.0"
+dirs = "4.0"
