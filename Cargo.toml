@@ -34,3 +34,4 @@ embedded-graphics = "0.8"
 [build-dependencies]
 embuild = "0.33"
 cc = "1.0"
+dirs = "6.0.0"

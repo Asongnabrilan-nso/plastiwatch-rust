@@ -39,7 +39,7 @@ fn find_compiler() -> Option<std::path::PathBuf> {
 }
 
 fn build_ei(compiler_path: &std::path::Path) {
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
 
     let sdk_root = PathBuf::from("motion-detection_inferencing");
     
