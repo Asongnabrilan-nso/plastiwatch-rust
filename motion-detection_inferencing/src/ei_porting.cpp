@@ -11,8 +11,11 @@
 #include <cstdarg>
 
 // Use ESP-IDF functions
+// Note: Include paths should be set by build.rs to point to ESP-IDF components
 #include "esp_timer.h"
 #include "esp_log.h"
+// ESP-IDF v5 uses FreeRTOS-Kernel
+// The include path components/freertos/FreeRTOS-Kernel/include contains freertos/ subdirectory
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
