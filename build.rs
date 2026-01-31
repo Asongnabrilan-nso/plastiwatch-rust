@@ -43,6 +43,36 @@ fn build_ei(compiler_path: &std::path::Path) {
 
     let sdk_root = PathBuf::from("motion-detection_inferencing");
     
+    // Get ESP-IDF include paths from environment variables set by embuild
+    // These are set by embuild::espidf::sysenv::output() above
+    let mut esp_idf_includes = Vec::new();
+    
+    // Try to get ESP-IDF path from common environment variables
+    if let Ok(idf_path) = std::env::var("IDF_PATH") {
+        let idf_path = PathBuf::from(idf_path);
+        esp_idf_includes.push(idf_path.join("components"));
+        esp_idf_includes.push(idf_path.join("components/esp_timer/include"));
+        esp_idf_includes.push(idf_path.join("components/freertos/FreeRTOS-Kernel/include"));
+        esp_idf_includes.push(idf_path.join("components/freertos/FreeRTOS-Kernel/portable/riscv/include"));
+        esp_idf_includes.push(idf_path.join("components/log/include"));
+        esp_idf_includes.push(idf_path.join("components/esp_common/include"));
+    } else if let Ok(idf_path) = std::env::var("DEP_ESP_IDF_SYS_IDF_PATH") {
+        let idf_path = PathBuf::from(idf_path);
+        esp_idf_includes.push(idf_path.join("components"));
+        esp_idf_includes.push(idf_path.join("components/esp_timer/include"));
+        esp_idf_includes.push(idf_path.join("components/freertos/FreeRTOS-Kernel/include"));
+        esp_idf_includes.push(idf_path.join("components/freertos/FreeRTOS-Kernel/portable/riscv/include"));
+        esp_idf_includes.push(idf_path.join("components/log/include"));
+        esp_idf_includes.push(idf_path.join("components/esp_common/include"));
+    }
+    
+    // Also check for include paths in DEP_ESP_IDF_SYS_INCLUDE (space-separated)
+    if let Ok(include_paths) = std::env::var("DEP_ESP_IDF_SYS_INCLUDE") {
+        for path in include_paths.split_whitespace() {
+            esp_idf_includes.push(PathBuf::from(path));
+        }
+    }
+    
     let mut build = cc::Build::new();
     
     build
@@ -64,6 +94,13 @@ fn build_ei(compiler_path: &std::path::Path) {
         .include(sdk_root.join("src/edge-impulse-sdk"))
         .include(sdk_root.join("src/model-parameters"))
         .include(sdk_root.join("src/tflite-model"));
+    
+    // Add ESP-IDF include paths
+    for include_path in &esp_idf_includes {
+        if include_path.exists() {
+            build.include(include_path);
+        }
+    }
 
     // Recursively add source files
     add_source_files(&mut build, &sdk_root.join("src"));
