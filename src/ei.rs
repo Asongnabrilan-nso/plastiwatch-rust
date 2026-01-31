@@ -38,6 +38,9 @@ pub const LABELS: [&str; EI_LABEL_COUNT] = ["idle", "snake", "updown", "wave"];
 /// threshold, or `None` when the best prediction is below threshold or an
 /// error occurred.
 pub fn classify(features: &[f32; EI_DSP_INPUT_FRAME_SIZE]) -> Option<ClassifierResult> {
+    #[cfg(feature = "edge-impulse")]
+    init_classifier();
+    
     let predictions = run_inference(features)?;
 
     // Find the label with highest confidence
@@ -101,36 +104,69 @@ fn stub_inference(_features: &[f32; EI_DSP_INPUT_FRAME_SIZE]) -> Option<[f32; EI
 }
 
 // ---------------------------------------------------------------------------
-// Real FFI back-end — calls the C++ Edge Impulse compiled library
+// Real FFI back-end — calls the C++ Edge Impulse compiled library via C wrapper
 // ---------------------------------------------------------------------------
 #[cfg(feature = "edge-impulse")]
 mod ffi {
     use std::ffi::c_char;
 
-    #[repr(C)]
-    pub struct EiSignal {
-        pub get_data: Option<unsafe extern "C" fn(usize, usize, *mut f32) -> i32>,
-        pub total_length: usize,
-    }
-
+    // Match ei_impulse_result_classification_t from ei_classifier_types.h
     #[repr(C)]
     pub struct EiClassification {
         pub label: *const c_char,
         pub value: f32,
     }
 
-    // The full struct has more fields; we only access `classification`.
+    // Match ei_impulse_result_timing_t (simplified - we only need what's used)
     #[repr(C)]
-    pub struct EiImpulseResult {
-        pub classification: [EiClassification; super::EI_LABEL_COUNT],
-        pub anomaly: f32,
+    pub struct EiTiming {
+        pub sampling: i32,
+        pub dsp: i32,
+        pub classification: i32,
+        pub anomaly: i32,
+        pub dsp_us: i64,
+        pub classification_us: i64,
+        pub anomaly_us: i64,
     }
 
+    // Match ei_impulse_result_t from ei_classifier_types.h
+    // Note: This matches the statically allocated version (EI_IMPULSE_RESULT_CLASSIFICATION_IS_STATICALLY_ALLOCATED == 1)
+    // Structure layout matches C++ version compiled with our model settings:
+    // - EI_CLASSIFIER_OBJECT_DETECTION = 0 (no bounding boxes)
+    // - EI_CLASSIFIER_HAS_VISUAL_ANOMALY = 0 (no visual AD fields)
+    // - EI_CLASSIFIER_HR_ENABLED = 0 (no HR fields)
+    // Note: On ESP32-C3 (32-bit RISC-V), pointers are 4 bytes
+    #[repr(C)]
+    pub struct EiImpulseResult {
+        pub bounding_boxes: *mut core::ffi::c_void, // Pointer (4 bytes on 32-bit)
+        pub bounding_boxes_count: u32,              // 4 bytes
+        pub classification: [EiClassification; super::EI_LABEL_COUNT], // Array of 4 structs
+        pub anomaly: f32,                           // 4 bytes
+        pub timing: EiTiming,                       // Struct with i32, i32, i32, i32, i64, i64, i64
+        pub _raw_outputs: *mut core::ffi::c_void,   // C++ pointer (4 bytes on 32-bit)
+        // Visual AD fields not present (EI_CLASSIFIER_HAS_VISUAL_ANOMALY == 0)
+        // HR fields not present (EI_CLASSIFIER_HR_ENABLED == 0)
+        pub postprocessed_output: [u8; 0],          // Empty struct (0 bytes)
+    }
+
+    // C wrapper functions from ei_wrapper.cpp
     extern "C" {
-        pub fn run_classifier(
-            signal: *mut EiSignal,
+        /// Run Edge Impulse classifier on a float buffer
+        /// Returns 0 on success, non-zero on error
+        pub fn ei_run_classifier_ffi(
+            features: *const f32,
             result: *mut EiImpulseResult,
-            debug: bool,
+            debug: i32,
+        ) -> i32;
+
+        /// Initialize Edge Impulse classifier (for continuous inference)
+        pub fn ei_run_classifier_init_ffi();
+
+        /// Extract classification values from result structure
+        /// Returns 0 on success, non-zero on error
+        pub fn ei_get_classification_values(
+            result: *const EiImpulseResult,
+            out_values: *mut f32,
         ) -> i32;
     }
 }
@@ -139,46 +175,63 @@ mod ffi {
 fn ffi_inference(features: &[f32; EI_DSP_INPUT_FRAME_SIZE]) -> Option<[f32; EI_LABEL_COUNT]> {
     use std::ffi::CStr;
 
-    // Signal callback reads directly from the features slice.
-    // SAFETY: single-threaded access — only the AI task calls this.
-    static mut SIGNAL_BUF: *const f32 = std::ptr::null();
-    static mut SIGNAL_LEN: usize = 0;
-
-    unsafe extern "C" fn get_data(offset: usize, length: usize, out: *mut f32) -> i32 {
-        unsafe {
-            if SIGNAL_BUF.is_null() || offset + length > SIGNAL_LEN {
-                return -1;
-            }
-            core::ptr::copy_nonoverlapping(SIGNAL_BUF.add(offset), out, length);
-        }
-        0
-    }
-
     unsafe {
-        SIGNAL_BUF = features.as_ptr();
-        SIGNAL_LEN = features.len();
-
-        let mut signal = ffi::EiSignal {
-            get_data: Some(get_data),
-            total_length: features.len(),
-        };
-
+        // Zero-initialize the result structure
         let mut result: ffi::EiImpulseResult = core::mem::zeroed();
 
-        let err = ffi::run_classifier(&mut signal, &mut result, false);
+        // Call the C wrapper function
+        let err = ffi::ei_run_classifier_ffi(
+            features.as_ptr(),
+            &mut result,
+            0, // debug = false
+        );
+
         if err != 0 {
             log::error!("Edge Impulse classifier error: {}", err);
             return None;
         }
 
+        // Extract classification results using the safe helper function
         let mut preds = [0.0f32; EI_LABEL_COUNT];
+        let extract_err = ffi::ei_get_classification_values(&result, preds.as_mut_ptr());
+        if extract_err != 0 {
+            log::error!("Failed to extract classification values");
+            return None;
+        }
+        
+        // Log the results (try to get labels from the result structure)
         for i in 0..EI_LABEL_COUNT {
-            preds[i] = result.classification[i].value;
-            let label = CStr::from_ptr(result.classification[i].label);
-            log::debug!("{}: {:.4}", label.to_str().unwrap_or("?"), preds[i]);
+            if !result.classification[i].label.is_null() {
+                if let Ok(label_cstr) = CStr::from_ptr(result.classification[i].label) {
+                    if let Ok(label_str) = label_cstr.to_str() {
+                        log::debug!("{}: {:.4}", label_str, preds[i]);
+                    }
+                }
+            }
         }
 
-        SIGNAL_BUF = std::ptr::null();
+        // Log timing information
+        log::debug!(
+            "Inference timing — DSP: {} ms, Classification: {} ms, Anomaly: {} ms",
+            result.timing.dsp,
+            result.timing.classification,
+            result.timing.anomaly
+        );
+
         Some(preds)
     }
+}
+
+// Initialize Edge Impulse on first use (called from main or AI task)
+#[cfg(feature = "edge-impulse")]
+static EI_INIT_ONCE: std::sync::Once = std::sync::Once::new();
+
+#[cfg(feature = "edge-impulse")]
+pub fn init_classifier() {
+    EI_INIT_ONCE.call_once(|| {
+        unsafe {
+            ffi::ei_run_classifier_init_ffi();
+        }
+        log::info!("Edge Impulse classifier initialized");
+    });
 }

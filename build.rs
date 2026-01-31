@@ -48,14 +48,17 @@ fn build_ei(compiler_path: &std::path::Path) {
     build
         .cpp(true)
         .compiler(compiler_path) // Explicitly set the compiler path
-
-        .cpp(true)
         .flag("-std=c++14")
         .flag("-O3")
         .flag("-g3")
         .define("EI_CLASSIFIER_ENABLE_DETECTION_3D", "0")
         .define("EI_CLASSIFIER_TFLITE_ENABLE_CMSIS_NN", "0")
         .define("EI_NATIVE_ARCH", "1")
+        // Enable C function pointers for signal_t (required for C FFI)
+        .define("EIDSP_SIGNAL_C_FN_POINTER", "1")
+        // Enable ESP-IDF porting layer
+        .define("EI_PORTING_ESPRESSIF", "1")
+        .define("CONFIG_IDF_TARGET_ESP32C3", "1") // ESP32-C3 target
         .include(&sdk_root)
         .include(sdk_root.join("src"))
         .include(sdk_root.join("src/edge-impulse-sdk"))
@@ -64,6 +67,10 @@ fn build_ei(compiler_path: &std::path::Path) {
 
     // Recursively add source files
     add_source_files(&mut build, &sdk_root.join("src"));
+    
+    // Add our C++ wrapper and porting layer
+    build.file(sdk_root.join("src/ei_wrapper.cpp"));
+    build.file(sdk_root.join("src/ei_porting.cpp"));
 
     build.compile("edge-impulse-sdk");
 
