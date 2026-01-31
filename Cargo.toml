@@ -19,9 +19,9 @@ opt-level = "z"
 
 [features]
 default = []
+edge-impulse = []
 
 experimental = ["esp-idf-svc/experimental"]
-edge-impulse = []
 
 [dependencies]
 esp-idf-sys = { version = "0.36", features = ["binstart"] }
@@ -34,4 +34,3 @@ embedded-graphics = "0.8"
 [build-dependencies]
 embuild = "0.33"
 cc = "1.0"
-dirs = "4.0"
