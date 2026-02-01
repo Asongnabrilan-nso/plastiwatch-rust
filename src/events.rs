@@ -25,7 +25,8 @@ pub enum ActivityClass {
 }
 
 impl ActivityClass {
-    /// Human-readable label shown on the OLED activity screen.
+    /// Human-readable label (kept for debugging/logging purposes).
+    #[allow(dead_code)]
     pub fn display_name(&self) -> &'static str {
         match self {
             Self::Idle   => "normal",

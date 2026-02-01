@@ -10,7 +10,6 @@ use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
     pixelcolor::BinaryColor,
-    prelude::*,
     Pixel,
 };
 use crate::events::ActivityClass;

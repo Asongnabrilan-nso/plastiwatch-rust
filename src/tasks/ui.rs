@@ -15,7 +15,7 @@ use esp_idf_hal::gpio::{AnyInputPin, AnyOutputPin, Input, Output, PinDriver};
 use crate::config::*;
 use crate::drivers::display::{OledDisplay, SharedBus};
 use crate::drivers::haptic::HapticDriver;
-// use crate::drivers::sprites::{AnimationState, get_frame_count};
+use crate::drivers::sprites::{AnimationState, get_frame_count};
 use crate::events::{ActivityClass, UiEvent};
 use crate::input::InputManager;
 
