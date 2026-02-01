@@ -8,7 +8,6 @@ use std::sync::Mutex;
 use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{OriginDimensions, Point, Size},
-    image::{Image, ImageRaw},
     mono_font::{ascii::FONT_6X10, MonoTextStyle},
     pixelcolor::BinaryColor,
     prelude::*,
@@ -19,6 +18,7 @@ use esp_idf_hal::i2c::I2cDriver;
 
 use crate::config::*;
 use crate::events::ActivityClass;
+use crate::drivers::sprites::{AnimationState, SPRITE_CENTER_X, SPRITE_CENTER_Y};
 
 // ---------------------------------------------------------------------------
 // PlastiBytes logo bitmap — 128×64 monochrome, SSD1306 page format
@@ -271,23 +271,25 @@ impl OledDisplay {
         self.flush()
     }
 
-    /// Activity display: activity name centred + battery indicator top-right.
-    pub fn show_activity(&mut self, activity: ActivityClass, battery_pct: f32) -> anyhow::Result<()> {
+    /// Activity display: animated character + battery indicator top-right.
+    pub fn show_activity(
+        &mut self,
+        activity: ActivityClass,
+        battery_pct: f32,
+        animation_state: &AnimationState,
+    ) -> anyhow::Result<()> {
         self.clear_buffer();
 
         // Battery icon (top-right corner)
         self.draw_battery(battery_pct);
 
-        // Activity label centred
-        let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
-        Text::with_alignment(
-            activity.display_name(),
-            Point::new(64, 38),
-            style,
-            Alignment::Center,
-        )
-        .draw(self)
-        .unwrap();
+        // Draw animated character sprite centered
+        let sprite_data = crate::drivers::sprites::get_sprite_frame(activity, animation_state.current_frame());
+        let sprite_pos = Point::new(
+            SPRITE_CENTER_X - 16, // Center 32px sprite (32/2 = 16)
+            SPRITE_CENTER_Y - 16,
+        );
+        crate::drivers::sprites::draw_sprite(self, sprite_data, sprite_pos)?;
 
         self.flush()
     }
